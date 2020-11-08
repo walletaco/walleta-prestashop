@@ -5,14 +5,19 @@
  */
 class WalletaVerifyModuleFrontController extends ModuleFrontController
 {
+    const PAYMENT_VERIFY_URL = 'https://cpg.walleta.ir/payment/verify.json';
+
+    public $ssl = true;
+    public $display_column_left = false;
+
     /**
-     * @return false|void
-     * @throws \PrestaShopException
+     * @return void
+     * @throws \Exception
      */
     public function postProcess()
     {
         if (Tools::isSubmit('id_cart') === false || Tools::isSubmit('key') === false) {
-            return false;
+            return;
         }
 
         $authorized = false;
@@ -24,7 +29,7 @@ class WalletaVerifyModuleFrontController extends ModuleFrontController
         }
 
         if (!$authorized) {
-            die($this->module->l('This payment method is not available.', 'validation'));
+            die($this->module->l('This payment method is not available.', 'verify'));
         }
 
         $paymentStatus = Tools::getValue('status');
@@ -33,27 +38,43 @@ class WalletaVerifyModuleFrontController extends ModuleFrontController
         $cart = new Cart((int)$cartId);
 
         if (!Validate::isLoadedObject($cart)) {
-            $this->setErrorTemplate($this->module->l('An error occured. Please contact the merchant to have more informations'));
+            $this->setErrorTemplate(
+                $this->module->l('An error occurred. Please contact the merchant to have more information.', 'verify')
+            );
+            return;
+        }
+
+        if ($cart->orderExists()) {
+            $order = $this->getOrder($cart->id);
+
+            if (Validate::isLoadedObject($order) && $order->hasBeenPaid()) {
+                $this->setTemplate($this->module->buildTemplatePath('payment_success'));
+            } else {
+                $this->setTemplate($this->module->l('Order has already been placed.', 'verify'));
+            }
+
             return;
         }
 
         $customer = new Customer((int)$cart->id_customer);
 
         if ($secureKey !== $customer->secure_key) {
-            $this->setErrorTemplate($this->module->l('An error occured. Please contact the merchant to have more informations'));
+            $this->setErrorTemplate(
+                $this->module->l('An error occurred. Please contact the merchant to have more information.', 'verify')
+            );
             return;
         }
 
         if ($paymentStatus !== 'success') {
-            $this->setErrorTemplate($this->module->l('Payment is canceled.'));
+            $this->setErrorTemplate($this->module->l('Payment is canceled.', 'verify'));
             return;
         }
 
         try {
             $params = $this->getPaymentVerifyParams($cart);
 
-            $response = (new \Walleta\Client\HttpRequest)
-                ->post('https://cpg.walleta.ir/payment/verify.json', $params);
+            $client = new \Walleta\Client\HttpRequest();
+            $response = $client->post(self::PAYMENT_VERIFY_URL, $params);
 
             if (!$response->isSuccess()) {
                 $this->setErrorTemplate($response->getErrorMessage());
@@ -61,7 +82,7 @@ class WalletaVerifyModuleFrontController extends ModuleFrontController
             }
 
             if ($response->getData('is_paid') !== true) {
-                $this->setErrorTemplate('Order is not paid.');
+                $this->setErrorTemplate($this->module->l('Order is not paid.', 'verify'));
                 return;
             }
 
@@ -80,23 +101,32 @@ class WalletaVerifyModuleFrontController extends ModuleFrontController
             );
 
             if (!$result) {
-                $this->setErrorTemplate($this->module->l('Unable to save the order.'));
+                $this->setErrorTemplate($this->module->l('Unable to save the order.', 'verify'));
                 return;
             }
 
-            $this->setTemplate('module:walleta/views/templates/front/status.tpl');
-
-            $this->context->smarty->assign([
-                'redirectUrl' => '',
-            ]);
-        } catch (Exception $ex) {
+            $this->setTemplate($this->module->buildTemplatePath('payment_success'));
+        } catch (\Exception $ex) {
             $this->setErrorTemplate($ex->getMessage());
         }
     }
 
     /**
+     * @param int $cartId Cart Id
+     * @return \Order
+     * @throws \Exception
+     */
+    public function getOrder($cartId)
+    {
+        $orderId = Order::getOrderByCartId($cartId);
+
+        return new Order($orderId);
+    }
+
+    /**
      * @param Cart $cart Cart Object
      * @return array
+     * @throws \Exception
      */
     protected function getPaymentVerifyParams($cart)
     {
@@ -118,10 +148,10 @@ class WalletaVerifyModuleFrontController extends ModuleFrontController
      */
     protected function setErrorTemplate($message)
     {
-        $this->setTemplate('module:walleta/views/templates/front/error.tpl');
-
         $this->context->smarty->assign([
-            'errors' => (array)$message,
+            'paymentErrors' => (array)$message,
         ]);
+
+        $this->setTemplate($this->module->buildTemplatePath('payment_failed'));
     }
 }

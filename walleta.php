@@ -1,7 +1,5 @@
 <?php
 
-use PrestaShop\PrestaShop\Core\Payment\PaymentOption;
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -16,7 +14,7 @@ class Walleta extends PaymentModule
     {
         $this->name = 'walleta';
         $this->tab = 'payments_gateways';
-        $this->version = '1.0.0';
+        $this->version = '1.1.0';
         $this->author = 'Mahmood Dehghani';
         $this->need_instance = 0;
 
@@ -32,7 +30,7 @@ class Walleta extends PaymentModule
 
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
 
-        $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
+        $this->ps_versions_compliancy = ['min' => '1.6', 'max' => _PS_VERSION_];
     }
 
     /**
@@ -41,16 +39,23 @@ class Walleta extends PaymentModule
      */
     public function install()
     {
-        if (extension_loaded('curl') == false) {
+        if (extension_loaded('curl') === false) {
             $this->_errors[] = $this->l('You have to enable the cURL extension on your server to install this module');
             return false;
         }
 
         Configuration::updateValue('WALLETA_MERCHANT_CODE', '');
 
-        return parent::install() &&
-            $this->registerHook('paymentReturn') &&
-            $this->registerHook('paymentOptions');
+        $status = parent::install() &&
+            $this->registerHook('paymentReturn');
+
+        if (version_compare(_PS_VERSION_, '1.7', 'lt')) {
+            $status &= $this->registerHook('payment');
+        } else {
+            $status &= $this->registerHook('paymentOptions');
+        }
+
+        return $status;
     }
 
     public function uninstall()
@@ -108,13 +113,13 @@ class Walleta extends PaymentModule
             . '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name;
         $helper->token = Tools::getAdminTokenLite('AdminModules');
 
-        $helper->tpl_vars = array(
+        $helper->tpl_vars = [
             'fields_value' => $this->getConfigFormValues(), /* Add values for your inputs */
             'languages' => $this->context->controller->getLanguages(),
             'id_language' => $this->context->language->id,
-        );
+        ];
 
-        return $helper->generateForm(array($this->getConfigForm()));
+        return $helper->generateForm([$this->getConfigForm()]);
     }
 
     /**
@@ -122,14 +127,14 @@ class Walleta extends PaymentModule
      */
     protected function getConfigForm()
     {
-        return array(
-            'form' => array(
-                'legend' => array(
+        return [
+            'form' => [
+                'legend' => [
                     'title' => $this->l('Settings'),
                     'icon' => 'icon-cogs',
-                ),
-                'input' => array(
-                    array(
+                ],
+                'input' => [
+                    [
                         'col' => 3,
                         'type' => 'text',
                         'prefix' => '<i class="icon icon-key"></i>',
@@ -137,13 +142,13 @@ class Walleta extends PaymentModule
                         'name' => 'WALLETA_MERCHANT_CODE',
                         'label' => $this->l('Merchant Code'),
                         'class' => 'walleta-text-left',
-                    ),
-                ),
-                'submit' => array(
+                    ],
+                ],
+                'submit' => [
                     'title' => $this->l('Save'),
-                ),
-            ),
-        );
+                ],
+            ],
+        ];
     }
 
     /**
@@ -151,9 +156,9 @@ class Walleta extends PaymentModule
      */
     protected function getConfigFormValues()
     {
-        return array(
+        return [
             'WALLETA_MERCHANT_CODE' => Configuration::get('WALLETA_MERCHANT_CODE'),
-        );
+        ];
     }
 
     /**
@@ -184,6 +189,38 @@ class Walleta extends PaymentModule
     }
 
     /**
+     * Return payment options available for PS 1.6
+     *
+     * @param array Hook parameters
+     * @return mixed
+     */
+    public function hookPayment($params)
+    {
+        if (!$this->active) {
+            return null;
+        }
+        if (!$this->checkCurrency($params['cart'])) {
+            return null;
+        }
+
+        $this->smarty->assign([
+            'action' => $this->context->link->getModuleLink($this->name, 'request', [], true),
+            'logo' => $this->getLogo(),
+        ]);
+
+        return $this->display(__FILE__, 'payment16.tpl');
+    }
+
+    /**
+     * @param string $file File name
+     * @return string
+     */
+    public function getLogo($file = 'logo.png')
+    {
+        return Media::getMediaPath(_PS_MODULE_DIR_ . $this->name . '/img/' . $file);
+    }
+
+    /**
      * Return payment options available for PS 1.7+
      *
      * @param array Hook parameters
@@ -204,7 +241,7 @@ class Walleta extends PaymentModule
         $address = new Address($params['cart']->id_address_invoice);
         $mobile = $this->getCustomerMobile($address);
 
-        $option = new PaymentOption();
+        $option = new \PrestaShop\PrestaShop\Core\Payment\PaymentOption();
         $option->setCallToActionText($this->l('Pay by Walleta'))
             ->setForm($this->generateForm($mobile));
 
@@ -258,6 +295,18 @@ class Walleta extends PaymentModule
         }
 
         return '';
+    }
+
+    /**
+     * @param string $name Name
+     * @return string
+     */
+    public function buildTemplatePath($name)
+    {
+        if (version_compare(_PS_VERSION_, '1.7', 'lt')) {
+            return $name . '16.tpl';
+        }
+        return sprintf('module:walleta/views/templates/front/%s.tpl', $name);
     }
 
     /**

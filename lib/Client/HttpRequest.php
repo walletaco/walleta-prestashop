@@ -18,7 +18,7 @@ class HttpRequest
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Content-Length: ' . strlen($jsonData)
+                'Content-Length: ' . strlen($jsonData),
             ],
         ];
 

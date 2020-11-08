@@ -5,21 +5,105 @@
  */
 class WalletaRequestModuleFrontController extends ModuleFrontController
 {
-    /**
-     * This class should be use by your Instant Payment
-     * Notification system to validate the order remotely
-     */
-    public function postProcess()
-    {
-        $cart = $this->context->cart;
+    const PAYMENT_REQUEST_URL = 'https://cpg.walleta.ir/payment/request.json';
+    const PAYMENT_GATEWAY_URL = 'https://cpg.walleta.ir/ticket/';
 
+    public $ssl = true;
+    public $display_column_left = false;
+
+    /**
+     * @return void
+     * @throws \Exception
+     */
+    public function initContent()
+    {
+        parent::initContent();
+
+        $this->canBeUsed();
+
+        $customer = new Customer((int)($this->context->cart->id_customer));
+        $address = new Address((int)$this->context->cart->id_address_invoice);
+        $result = [
+            'errors' => [],
+            'redirect' => null,
+        ];
+
+        if (Tools::isSubmit('national_code') && Tools::isSubmit('mobile')) {
+            $result = $this->processPaymentRequest($customer, $address);
+
+            if ($result['redirect']) {
+                $this->redirectTo($result['redirect'], '');
+            }
+        }
+
+        $this->context->smarty->assign([
+            'paymentErrors' => $result['errors'],
+            'mobile' => $this->module->getCustomerMobile($address),
+            'nationalCode' => $this->module->getCustomerNationalCode(),
+        ]);
+
+        $this->setTemplate($this->module->buildTemplatePath('payment_request'));
+    }
+
+    /**
+     * @param Customer $customer Customer Object
+     * @param Address $address Address Object
+     * @return array
+     */
+    protected function processPaymentRequest($customer, $address)
+    {
+        $result = [
+            'errors' => [],
+            'redirect' => null,
+        ];
+
+        try {
+            $params = $this->getPaymentRequestParams($this->context->cart, $customer, $address);
+
+            if (!$params['payer_national_code']) {
+                $result['errors'][] = $this->module->l('National Code is required.', 'request');
+            }
+
+            if (!$params['payer_mobile']) {
+                $result['errors'][] = $this->module->l('Mobile is required.', 'request');
+            }
+
+            if ($result['errors']) {
+                return $result;
+            }
+
+            $client = new \Walleta\Client\HttpRequest();
+            $response = $client->post(self::PAYMENT_REQUEST_URL, $params);
+
+            if (!$response->isSuccess()) {
+                $result['errors'][] = $response->getErrorMessage();
+                if ($response->getErrorType() === 'validation_error') {
+                    $result['errors'] = array_merge($result['errors'], $response->getValidationErrors());
+                }
+
+                return $result;
+            }
+
+            $result['redirect'] = self::PAYMENT_GATEWAY_URL . $response->getData('token');
+        } catch (\Exception $ex) {
+            $result['errors'][] = $this->module->l('Error to get a payment token.', 'request');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return void
+     */
+    protected function canBeUsed()
+    {
         if (
-            $cart->nbProducts() <= 0 ||
-            $cart->id_customer === 0 ||
-            $cart->id_address_delivery === 0 ||
-            $cart->id_address_invoice === 0 ||
+            $this->context->cart->nbProducts() <= 0 ||
+            $this->context->cart->id_customer === 0 ||
+            $this->context->cart->id_address_delivery === 0 ||
+            $this->context->cart->id_address_invoice === 0 ||
             !$this->module->active) {
-            Tools::redirect('index.php?controller=order&step=1');
+            $this->redirectTo('index.php?controller=order&step=1');
         }
 
         $authorized = false;
@@ -31,42 +115,27 @@ class WalletaRequestModuleFrontController extends ModuleFrontController
         }
 
         if (!$authorized) {
-            die($this->module->l('This payment method is not available.', 'validation'));
+            die($this->module->l('This payment method is not available.', 'request'));
         }
 
-        try {
-            $customer = new Customer((int)($cart->id_customer));
-            $address = new Address((int)$cart->id_address_invoice);
-
-            $params = $this->getPaymentRequestParams($cart, $customer, $address);
-
-            if (!$params['payer_national_code']) {
-                $this->setErrorTemplate($this->module->l('National Code is required.'));
-                return;
-            }
-
-            if (!$params['payer_mobile']) {
-                $this->setErrorTemplate($this->module->l('Mobile is required.'));
-                return;
-            }
-
-            $response = (new \Walleta\Client\HttpRequest)
-                ->post('https://cpg.walleta.ir/payment/request.json', $params);
-
-            if (!$response->isSuccess()) {
-                $errors = (array)$response->getErrorMessage();
-                if ($response->getErrorType() === 'validation_error') {
-                    $errors = array_merge($errors, $response->getValidationErrors());
-                }
-                $this->setErrorTemplate($errors);
-                return;
-            }
-
-            $redirectUrl = 'http://cpg.walleta.test/ticket/' . $response->getData('token');
-            Tools::redirect($redirectUrl, '');
-        } catch (Exception $ex) {
-            $this->setErrorTemplate($this->module->l('Error to get a payment token.'));
+        if (!$this->module->checkCurrency($this->context->cart)) {
+            $this->redirectTo('index.php?controller=order&step=1');
         }
+    }
+
+    /**
+     * @param string $url Url
+     * @param string|null $base_uri Base URI
+     * @return void
+     */
+    protected function redirectTo($url, $base_uri = null)
+    {
+        if ($base_uri === null) {
+            $base_uri = __PS_BASE_URI__;
+        }
+
+        Tools::redirect($url, $base_uri);
+        die;
     }
 
     /**
@@ -74,6 +143,7 @@ class WalletaRequestModuleFrontController extends ModuleFrontController
      * @param Customer $customer Customer Object
      * @param Address $address Address Object
      * @return array
+     * @throws \Exception
      */
     protected function getPaymentRequestParams($cart, $customer, $address)
     {
@@ -128,19 +198,5 @@ class WalletaRequestModuleFrontController extends ModuleFrontController
         }
 
         return $data;
-    }
-
-    /**
-     * @param array|string $message
-     * @return void
-     * @throws \PrestaShopException
-     */
-    protected function setErrorTemplate($message)
-    {
-        $this->setTemplate('module:walleta/views/templates/front/error.tpl');
-
-        $this->context->smarty->assign([
-            'errors' => (array)$message,
-        ]);
     }
 }
