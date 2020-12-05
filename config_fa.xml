@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>walleta</name>
+    <displayName><![CDATA[والتا]]></displayName>
+    <version><![CDATA[1.2.0]]></version>
+    <description><![CDATA[والتا - درگاه پرداخت اعتباری]]></description>
+    <author><![CDATA[Mahmood Dehghani]]></author>
+    <tab><![CDATA[payments_gateways]]></tab>
+	<confirmUninstall><![CDATA[از حذف درگاه پرداخت اطمینان دارید؟]]></confirmUninstall>
+    <is_configurable>1</is_configurable>
+    <need_instance>0</need_instance>
+	<limited_countries></limited_countries>
+</module>

@@ -14,7 +14,7 @@ class Walleta extends PaymentModule
     {
         $this->name = 'walleta';
         $this->tab = 'payments_gateways';
-        $this->version = '1.1.0';
+        $this->version = '1.2.0';
         $this->author = 'Mahmood Dehghani';
         $this->need_instance = 0;
 
@@ -268,15 +268,17 @@ class Walleta extends PaymentModule
      */
     public function getCustomerMobile($address)
     {
-        if (\Walleta\Validation::mobile($address->phone_mobile)) {
-            return $address->phone_mobile;
+        $phoneMobile = \Walleta\PersianText::toEnglishNumber($address->phone_mobile);
+        if (\Walleta\Validation::mobile($phoneMobile)) {
+            return $phoneMobile;
         }
 
-        if (\Walleta\Validation::mobile($address->phone)) {
-            return $address->phone;
+        $phone = \Walleta\PersianText::toEnglishNumber($address->phone);
+        if (\Walleta\Validation::mobile($phone)) {
+            return $phone;
         }
 
-        $mobile = Tools::getValue('mobile', '');
+        $mobile = \Walleta\PersianText::toEnglishNumber(Tools::getValue('mobile', ''));
         if (\Walleta\Validation::mobile($mobile)) {
             return $mobile;
         }
@@ -289,7 +291,7 @@ class Walleta extends PaymentModule
      */
     public function getCustomerNationalCode()
     {
-        $nationalCode = Tools::getValue('national_code', '');
+        $nationalCode = \Walleta\PersianText::toEnglishNumber(Tools::getValue('national_code', ''));
         if (\Walleta\Validation::nationalCode($nationalCode)) {
             return $nationalCode;
         }
