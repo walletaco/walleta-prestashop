@@ -14,7 +14,7 @@ class Walleta extends PaymentModule
     {
         $this->name = 'walleta';
         $this->tab = 'payments_gateways';
-        $this->version = '1.2.0';
+        $this->version = '1.2.1';
         $this->author = 'Mahmood Dehghani';
         $this->need_instance = 0;
 
@@ -268,6 +268,11 @@ class Walleta extends PaymentModule
      */
     public function getCustomerMobile($address)
     {
+        $mobile = \Walleta\PersianText::toEnglishNumber(Tools::getValue('mobile', ''));
+        if (\Walleta\Validation::mobile($mobile)) {
+            return $mobile;
+        }
+
         $phoneMobile = \Walleta\PersianText::toEnglishNumber($address->phone_mobile);
         if (\Walleta\Validation::mobile($phoneMobile)) {
             return $phoneMobile;
@@ -276,11 +281,6 @@ class Walleta extends PaymentModule
         $phone = \Walleta\PersianText::toEnglishNumber($address->phone);
         if (\Walleta\Validation::mobile($phone)) {
             return $phone;
-        }
-
-        $mobile = \Walleta\PersianText::toEnglishNumber(Tools::getValue('mobile', ''));
-        if (\Walleta\Validation::mobile($mobile)) {
-            return $mobile;
         }
 
         return '';
